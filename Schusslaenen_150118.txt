@@ -1,0 +1,799 @@
+Private Sub CommandButton1_Click()
+
+ES_Log = "Log"
+ES_Ber = "Berechnung"
+' Einlesen
+
+   ZWKB = Worksheets(1).Range("C1")
+   d0 = Worksheets(1).Range("C2")
+   rez = Worksheets(1).Range("C3") * 0.01
+   B = Worksheets(1).Range("C4")
+   B1 = Worksheets(1).Range("C5")
+   h_ueb = Worksheets(1).Range("C6")
+   r_ueb = Worksheets(1).Range("C7")
+   l_eMod = Worksheets(1).Range("C8")
+   lambda0 = 0.02
+   QuotAMax = 0.445 / 100 ' Maximal zulässiger Fehler in %
+
+
+
+If (Abs(B1) < 0.001 Or Abs(h_ueb) < 0.001) Then r_ueb = 0
+
+'Start
+Worksheets(1).Range("G4") = ""
+Worksheets(1).Range("E8:G8") = ""
+Worksheets(1).Range("A11:A29") = ""
+Worksheets(1).Range("C11:H29") = ""
+
+Worksheets(ES_Log).Range("A2:Z200") = ""
+
+'Bestimmen der Schusslängen                               ************************
+
+' Umstellen auf Fläche A als Laufvariable
+
+Pi = 3.14159265359
+x = 0
+A_opt = Pi / 4 * d0 ^ 2 ' Einlaufquerschnitt
+A_last = A_opt          ' erster Querschnitt
+
+
+'D_opt = d0 * 1.1 ' Startwert für die Durchmessersuche
+'D_start = D_opt ' Startwert für die Suche des Optimalen Durchmessers
+'D_opt = Get_D_opt(D_start, x, ZWKB, rez, d0, lambda0, B, B1, h_ueb, r_ueb)
+'D_last = D_opt ' Erster Querschnitt
+
+
+i_Schuss = 0
+x_last = 0
+
+    ' Kleinen Durchmesser für Herstellbedingung/Abbruchbedingung bestimmen
+    AR = B1 * h_ueb + 2 * r_ueb ^ 2 * (1 - 0.25 * Pi)
+
+For x = 1 To ZWKB - l_eMod ' Entlag des Verteilrohr laufen
+
+
+  'D_start = D_opt ' Startwert für die Suche des Optimalen Durchmessers
+  'D_opt = Get_D_opt(D_start, x, ZWKB, rez, d0, lambda0, B, B1, h_ueb, r_ueb)
+  'If D_opt > 1.001 * B Then ' Größer Halbkreis
+  
+    Ls = x - x_last 'Länge des aktuellen Schuss
+    'Ag = A_last 'Letzer Querschnitt
+    Ag = Get_A_opt(x_last, ZWKB, rez, d0, lambda0)
+    Ak = Get_A_opt(x, ZWKB, rez, d0, lambda0) ' Akueller Querschnitt
+    
+    xp = Round(Ls / 2, 0) ' Mitte des Schusses
+    A_opt = Get_A_opt(x - xp, ZWKB, rez, d0, lambda0) ' Mittlerer Querschnitt Optimal
+
+    Hg = Get_h(Ag - AR, B)
+    HK = Get_h(Ak - AR, B)
+    
+    A_i = Get_Alin_rund(Hg, HK, Ls - xp, Ls, B, B1, h_ueb, r_ueb) ' Mittlerer Querschnitt Real
+    Diff = Abs(A_opt - A_i) / A_i
+  
+    Dk = Get_D_hb(HK, B)
+
+            'Abbruchbedingungen
+            'gegebenenfalls an Diagramm zu herstellbaren Schusslängen anpassen!
+            
+            If Abbruch(Diff, QuotAMax, x, ZWKB, l_eMod, Ls, Dk, HK, h_ueb) > 0 Then
+               If Diff > QuotAMax And x < ZWKB - l_eMod Then
+                x = x - 1  ' Korrektur, da Iteration erst abbricht, wenn Limit erstmalig überschritten
+               End If
+               D_last = D_opt ' Erster Querschnitt
+               A_last = Ak
+               i_Schuss = i_Schuss + 1
+               Worksheets(ES_Log).Range("A" & (1 + i_Schuss)) = i_Schuss
+               Worksheets(ES_Log).Range("B" & (1 + i_Schuss)) = x - x_last
+               Worksheets(ES_Ber).Range("A" & (10 + i_Schuss)) = x - x_last ' Länge des Schusses
+               Worksheets(ES_Log).Range("C" & (1 + i_Schuss)) = Diff * 100 ' Zeigt den Fehler für x+1
+               Worksheets(ES_Log).Range("D" & (1 + i_Schuss)) = Dk
+               Worksheets(ES_Log).Range("E" & (1 + i_Schuss)) = HK
+               'text Abbruchbedingung
+               Worksheets(ES_Log).Range("F" & (1 + i_Schuss)) = Abbruch(Diff, QuotAMax, x, ZWKB, l_eMod, Ls, Dk, HK, h_ueb)
+               x_last = x
+               'x = x + 1 '(Endlosschleife verhindern)
+            End If
+
+Next x
+
+'End
+
+' Runden                                                               ************************
+
+' Bestimmen der maximalen länge des letzten Schusses
+Lsl = Ls ' länge des letzten Schuss
+' Dk kleiner Durchmesser des letzen Schuss
+' i_Schuss Lete Schussnummer
+
+Von_X = ZWKB - l_eMod - Lsl
+zu__x = ZWKB - l_eMod - Worksheets(ES_Log).Range("B" & (1 + i_Schuss - 1))  ' Maximal die Länge
+                                                                        ' des Vorgänderschusses
+Ak = Get_A_opt(ZWKB - l_eMod, ZWKB, rez, d0, lambda0) ' Kleinster Querschnitt des letzen Schusses
+
+For x = Von_X To zu__x Step -1
+
+  Ag = Get_A_opt(x, ZWKB, rez, d0, lambda0) ' Akueller Querschnitt
+  
+  Ls = ZWKB - l_eMod - x  'Länge des aktuellen Schuss
+  xp = Round(Ls / 2, 0) ' Mitte des Schusses
+  A_opt = Get_A_opt(x + xp, ZWKB, rez, d0, lambda0) ' Mittlerer Querschnitt Optimal
+
+  ' Kleinen Durchmesser für Herstellbedingung/Abbruchbedingung bestimmen
+  'AR = B1 * h_ueb + 2 * r_ueb ^ 2 * (1 - 0.25 * Pi)
+    
+  Hg = Get_h(Ag - AR, B)
+  HK = Get_h(Ak - AR, B)
+
+  A_i = Get_Alin_rund(Hg, HK, xp, Ls, B, B1, h_ueb, r_ueb) ' Mittlerer Querschnitt Real
+  Diff = Abs(A_opt - A_i) / A_i
+
+            'Abbruchbedingungen
+            If Diff >= QuotAMax Or x = zu__x Then
+             ' Maximale länge des letzen Schusses erreich
+             len_free = (ZWKB - l_eMod - Lsl) - x ' Variable Länge des letzen Schusses
+             x = -1
+            End If
+
+Next x
+
+' verteilen der freien Länge auf die anderen Schüsse
+'Worksheets(1).Range("I" & (10 + i_Schuss)) = Worksheets(1).Range("G" & (10 + i_Schuss)) + len_free
+len_free_max = len_free
+
+' Runden auf 5 mm
+For i_Schuss = 1 To 100
+ Ls = Worksheets(ES_Log).Range("B" & (1 + i_Schuss)) ' Länge des Schusses
+ If Ls > 0 Then
+ diff_rund = Ls - Application.RoundDown(Ls / 5, 0) * 5
+ If diff_rund < len_free Then
+  len_free = len_free - diff_rund
+  Ls = Ls - diff_rund
+ End If
+ Worksheets(ES_Log).Range("H" & (1 + i_Schuss)) = Ls ' Länge des Schusses
+ Worksheets(ES_Ber).Range("A" & (10 + i_Schuss)) = Ls ' Länge des Schusses
+ Else
+  i_Schuss_last = i_Schuss - 1
+  i_Schuss = 101
+ End If
+Next i_Schuss
+
+' Runden auf 10 mm
+For i_Schuss = 1 To i_Schuss_last
+ Ls = Worksheets(ES_Log).Range("H" & (1 + i_Schuss)) ' Länge des Schusses
+ 
+ diff_rund = Ls - Application.RoundDown(Ls / 10, 0) * 10
+ If diff_rund < len_free Then
+  len_free = len_free - diff_rund
+  Ls = Ls - diff_rund
+ End If
+ Worksheets(ES_Log).Range("H" & (1 + i_Schuss)) = Ls ' Länge des Schusses
+ Worksheets(ES_Ber).Range("A" & (10 + i_Schuss)) = Ls ' Länge des Schusses
+
+Next i_Schuss
+
+Worksheets(ES_Log).Range("H" & (1 + i_Schuss_last)) = Worksheets(ES_Log).Range("H" & (1 + i_Schuss_last)) + len_free_max - len_free
+Worksheets(ES_Ber).Range("A" & (10 + i_Schuss_last)) = Worksheets(ES_Log).Range("H" & (1 + i_Schuss_last))
+
+
+'Berechnet den genauen Fehler/Durchmesser/Höhe für die Gewählten Schusslängen    ************************
+x = 0
+'D_opt = d0 * 1.1 ' Startwert für die Durchmessersuche
+For i = 0 To 100
+ SL = 0
+ If Worksheets(1).Range("A" & (10 + i)) > 0 Then
+  SL = Worksheets(1).Range("A" & (10 + i)) ' Aktuelle Schusslänge
+ End If
+ If Worksheets(1).Range("B" & (10 + i)) > 0 Then
+  SL = Worksheets(1).Range("B" & (10 + i)) ' Aktuelle Schusslänge
+ End If
+ 
+ If SL > 0 Then
+  Worksheets(ES_Log).Range("I" & (1 + i)) = SL ' Länge des Schusses Gewählt
+  If i = 0 Then
+   SL = 0 ' Erster Schuss erster Einlauf
+   x = 0
+  Else
+   SL = Worksheets(1).Range("A" & (10 + i)) ' Aktuelle Schusslänge
+   x = x + SL ' Position der aktuellen Berechnung (Schussende)
+  End If
+  
+  Worksheets(1).Range("C" & (10 + i + 1)) = x
+  
+  ' Durchmesser und Höhe des aktuellen Schuss ausgeben
+  A_opt = Get_A_opt(x, ZWKB, rez, d0, lambda0) ' Akueller optimaler Querschnitt
+  H_opt = Get_h(A_opt - AR, B) ' Optimale Höhe
+  D_opt = Get_D_hb(H_opt, B)
+    
+  Worksheets(1).Range("D" & (10 + i + 1)) = D_opt ' Durchmesser ausgeben
+  Worksheets(1).Range("E" & (10 + i + 1)) = H_opt ' Höhe ausgeben
+
+  Worksheets(1).Range("F" & (10 + i + 1)) = D_opt / 2 + H_opt ' Höhe Fertigung ausgeben
+  
+  Worksheets(ES_Log).Range("J" & (1 + i + 1)) = D_opt
+  Worksheets(ES_Log).Range("K" & (1 + i + 1)) = H_opt
+  
+  'Ls = SL_i 'Länge des aktuellen Schuss
+  
+  Hg = HK
+  HK = H_opt
+  
+  'Berechnung des fehlers
+  DiffMax = 0
+  If i > 0 Then ' Nicht beim einlauf des ersten Schusses
+
+
+   'Dg = Worksheets(1).Range("C" & (10 + i)) 'Letzer Durchmesser
+   'Dk = D_opt ' Akueller Durchmesser
+   For xs = 0 To SL ' Durchlaufen des Schusses in mm Schritten
+    'x + xs ' Aktuelle Position mit x als Schussende
+    A_opt = Get_A_opt(x + xs - SL, ZWKB, rez, d0, lambda0)
+    A_i = Get_Alin_rund(Hg, HK, xs, SL, B, B1, h_ueb, r_ueb)
+
+    Diff = Abs(A_opt - A_i) / A_i
+    If Diff > DiffMax Then DiffMax = Diff
+    
+   Next xs
+   Worksheets(1).Range("G" & (10 + i)) = DiffMax * 100  ' Fehler ausgeben
+   Worksheets(ES_Log).Range("L" & (1 + i)) = DiffMax * 100
+   
+    'Validierung
+    A_lst = Get_A_opt(x - SL, ZWKB, rez, d0, lambda0)  ' Letzter Querschnitt
+    A_opt = Get_A_opt(x, ZWKB, rez, d0, lambda0) ' Aktueller Querschnitt
+   Worksheets(ES_Log).Range("M" & (1 + i)) = (A_lst - A_opt) / SL ' Validirung
+  End If
+
+ Else
+  Schuesse_max = i - 1
+  i = 101
+ End If
+Next i
+
+  ' Zugaben                                             ***********************
+For i = 1 To Schuesse_max + 1
+  x = Worksheets(1).Range("C" & (10 + i))
+  D = Worksheets(1).Range("D" & (10 + i))
+  H = Worksheets(1).Range("E" & (10 + i))
+  S_Zugabe = Get_S_Zugabe(Schuesse_max, x, ZWKB, D, H)
+  Worksheets(1).Range("H" & (10 + i)) = S_Zugabe
+Next i
+
+Worksheets(1).Range("G4") = Get_L_Zugabe(Schuesse_max)
+
+End Sub
+
+Public Function Abbruch(Diff, QuotAMax, x, ZWKB, l_eMod, Ls, Dk, HK, h_ueb)
+ 'Abbruchbedingung
+ 'Abbruch > 0 : Abbruck
+ 'Abbruch = 0 : Kein Abbruch
+ 
+ Abbruch = 0
+ If Diff >= QuotAMax Then Abbruch = 1   ' Technologisch
+ If x = ZWKB Then Abbruch = 2           ' Ende
+ If x = ZWKB - l_eMod Then Abbruch = 2  ' Ende
+ If HK >= 0 And Ls > Get_HerstL_rund(Dk) - 1 Then Abbruch = 3  ' Herstellbedingung
+ If HK < 0 And Ls > (HK + Dk / 2 + h_ueb) - 1 Then Abbruch = 3 ' Herstellbedingung
+ 
+End Function
+
+Public Function Get_D_opt(D_start, x, ZWKB, rez, d0, lambda0, B, B1, h_ueb, r_ueb)
+
+  ' Bestimmen des optimalen Querschnitts
+  A_opt = Get_A_opt(x, ZWKB, rez, d0, lambda0)
+  'Iterrieren des Rucksackdurchmessers
+  Steps = 100
+  For i2 = 1 To 4
+   Steps = Steps / 10
+   D_i = D_start
+   For D_i = D_start To 0 Step -Steps
+    Dg = D_i
+    Dk = D_i
+    xs = 1
+    Ls = 1
+    A_i = Get_Alin_rund(Dg, Dk, xs, Ls, B, B1, h_ueb, r_ueb)
+    
+    If A_i < A_opt Then
+     D_start = D_i + Steps
+     D_i = -1 'Abbruchbedingung
+    End If
+   Next D_i
+  Next i2
+ 
+  Get_D_opt = D_start
+ 
+End Function
+
+Public Function Get_A_opt(x, ZWKB, rez, d0, lambda0)
+      
+Dim xl, z, D, A
+
+   ' xl = Get_xl(x, ZWKB)
+   ' Rechnet die Position x (0 <= x <= ZWKB) in eine dimensionslose Koordinate xl um
+   ' mit 0 <= xl <= 1
+   ' x = Position am Verteilrohr (Abstand ab Einlauf in mm)
+   ' ZWKB = Auslaufbreite
+   xl = x / ZWKB
+   
+   ' Z = Get_z(rez, xl)
+   ' Bestimmt den Hilfswert z für die Geometriebestimmung
+   ' rez = Rezirkulationsanteil in %
+   ' xl = dimensionslose Laufkoordinate
+   z = Sqr(1 - (1 - rez) * xl)
+   
+   ' D = Get_D(d0, Z, lambda0, rez, ZWKB)
+   ' Berechnet den theoretischen hydraulischen Vollkreis-Durchmesser des Verteilrohres
+   ' Dieser muss anschließend in den abgeplatteten Querschnitt umgerechnet werden!
+   ' -> vgl. Funktion Get_Dv
+   ' d0 = Einlaufdurchmesser Verteilrohr
+   ' z = Hilfswert
+   ' lambda0 = Wandreibungszahl
+   ' rez = Rezirkulationsanteil in %
+   ' ZWKB = Auslaufbreite
+   D = d0 * z * (1 + (lambda0 / (2 * (1 - rez))) * (ZWKB / d0) * (1 - z ^ 0.8)) ^ 1.25
+   
+   ' A = Get_a(Pi, D)
+   ' Bestimmt die Querschnittsfläche eines Vollkreises
+    Pi = 3.141592
+   ' D = hydraulischer (theoretischer) Verteilrohrdurchmesser
+   A = (Pi / 4) * D ^ 2
+   
+   Get_A_opt = A
+
+End Function
+
+Public Function Get_Alin_rund(Hg, HK, xs, Ls, B, B1, h_ueb, r_ueb)
+   ' Bestimmt die reale Querschnittsfläche des konischen Verteilrohrschusses
+   ' Ag = Ideale Querschnittsfläche des großen Durchmesseres
+   ' Ak = Ideale Querschnittsfläche des klinen Durchmesseres
+   '      Dg = Großer Schussdurchmesser
+   '      Dk = kleiner Schussdurchmesser
+   '      Hg = große Höhe Kreismittelpunkt über Lochplatte
+   '      Hk = kleine Höhe Kreismittelpunkt über Lochplatte
+   ' xs = Laufkoordinate mit 0 <= xs <= Ls
+   ' Ls = Länge des betrachteten Verteilrohrschusses
+   ' Dlin = linear abnehmender Durchmesser entlang des Verteilrohrschusses
+   ' Hlin = linear abnehmende Höhe des Kreismittelpunktes entlang desVerteilrohrschusses
+   ' RKegel = Radius des Ausgleichskegels
+   ' B = Lochplattenbreite
+   ' Pi = 3.1415...
+   ' alphak = Öffnungswinkel am kleinen Schussquerschnitt
+   ' alphag = Öffnungswinkel am großen Schussquerschnitt
+   ' s = Hilfswert zur Teilflächen-Berechnung (A3 und A4)
+   ' h = Hilfswert zur Teilflächen-Berechnung (A3 und A4)
+   ' A1 = Ausgeschnittener Kreisquerschnitt mit alphak
+   ' A2 = Fläche des Ausgleichskegels
+   ' A3 = Fläche des Ausgleich-Viereckes
+   ' A4 = Fläche des Ausgleichs-Dreiecks
+   ' A5 = Fläche des Rechtecks (mit Rundungen) für direkt angeflanschte Rohre
+   
+   'Dim alphak, alphag, S, H, a1, A2, A3, A4, A5 As Double
+     
+   'Normal
+   'alphak = Sgn(B / Dk) * Atn(Sqr((B / Dk) ^ 2 / (1 - (B / Dk) ^ 2)))
+   'alphag = Sgn(B / Dg) * Atn(Sqr((B / Dg) ^ 2 / (1 - (B / Dg) ^ 2)))
+   'S = Rkegel * Sin(alphag)
+   'H = Rkegel * Cos(alphag)
+   'A1 = 0.25 * Dlin ^ 2 * (Pi - alphak)
+   'A2 = Rkegel ^ 2 * (alphak - alphag)
+   'A3 = (B - S) * H
+   'A4 = (0.5 * B - S) * (Hlin - H)
+   'A5 = B1 * h_ueb + 2 * r_ueb ^ 2 * (1 - (Pi / 4))
+   
+   
+   'Rucksack
+   Dim Dg, Dk As Double
+   Dim AR, H1, R1, DE, H, Rkegel As Double
+   Dim ALFG1, ALFK1, ALFK11, ALFG11 As Double
+   Dim HHILF As Double
+   Dim A1GES, A2GES, A3GES, A4GES As Double
+   Dim A3, A33, A4, A44 As Double
+   
+   Pi = 3.14159265359
+   H1 = h_ueb ' Höhe des Rechtecks
+   R1 = r_ueb ' Radius am Übergang zum Rechteck
+
+   x = xs ' Aktuelle Position
+   XG = 0 ' Position des großen Querschnitts
+   xk = Ls ' Position des kleinen Querschnitts
+       
+'C     Wenn kein Rechteck vorhanden ist, dann muss auch R1=0 sein!
+'C     Querschnittsflaeche eines evtl. angeschlossenen Rechtecks AR mm2:
+       If (Abs(B1) < 0.001 Or Abs(H1) < 0.001) Then R1 = 0
+       AR = B1 * H1 + 2 * R1 ^ 2 * (1 - 0.25 * Pi)
+
+       ' Durchmesser und Höhe über die Querschnittsfläche und Lochplattenbreite bestimmen
+       'DEG = Get_D(Ag - AR, B) ' Großer Durchmesser
+       'DEK = Get_D(Ak - AR, B) ' Kleiner Durchmesser
+       'Hg = Get_h(Ag - AR, B) ' Höhe am großen Querschnitt
+       'Hk = Get_h(Ak - AR, B) ' Höhe am kleinen Querschnitt
+       
+       DEG = Get_D_hb(Hg, B) ' Großer Durchmesser
+       DEK = Get_D_hb(HK, B) ' Kleiner Durchmesser
+
+'C     Abmessungen des Schusses zwischen grossem und kleinem Querschnitt:
+       DE = DEG - (DEG - DEK) * (x - XG) / (xk - XG)
+       H = Hg - (Hg - HK) * (x - XG) / (xk - XG)
+       Rkegel = 0.5 * DEG * (xk - x) / (xk - XG)
+
+       If (Abs(B) < 0.001) Then        'C     *** Sonderfall B=0:
+        
+        Get_Alin_rund = Pi * H ^ 2
+
+       ElseIf (Hg > B And HK > B) Then 'C     *** Fall 1a ***
+        
+        Get_Alin_rund = H ^ 2 * (1 + 0.75 * Pi) + AR
+
+       Else   'C     *** Uebrige Faelle ***
+
+'C     Winkel des grossen Querschnitts am Umfangs-Beginn ALFG1 rad:
+       If (Hg > B) Then ALFG1 = 0
+       If (Hg >= 0 And Hg < B) Then ALFG1 = Application.Acos(2 * Hg * B / (Hg ^ 2 + B ^ 2))
+       If (Hg < 0) Then ALFG1 = Application.Acos(2 * Hg / (B ^ 2 + 4 * Hg ^ 2) ^ 0.5)
+
+'C     Winkel des kleinen Querschnitts am Umfangs-Beginn ALFK1 rad:
+       If (HK > B) Then ALFK1 = 0
+       If (HK >= 0 And HK < B) Then ALFK1 = Application.Acos(2 * HK * B / (HK * HK + B * B))
+       If (HK < 0) Then ALFK1 = Application.Acos(2 * HK / (B * B + 4 * HK * HK) ^ 0.5)
+
+'C     Winkel des kleinen Querschnitts am Umfangs-Ende ALFK11 rad:
+       If (HK >= 0) Then ALFK11 = Pi / 2
+       If (HK < 0) Then ALFK11 = Application.Acos(2 * HK / (B * B + 4# * HK * HK) ^ 0.5)
+
+'C     Winkel des grossen Querschnitts am Umfangs-Ende ALFG11 rad:
+       If (Hg >= 0) Then ALFG11 = Pi / 2
+       If (Hg < 0) Then ALFG11 = Application.Acos(2 * Hg / (B * B + 4# * Hg * Hg) ^ 0.5)
+
+'C     z-Koordinate des Mittelpunkts von RKEGEL = Abstand von der Platte,
+'C     kann negativ werden HHILF mm:
+       HHILF = Rkegel * Cos(ALFG1)
+
+'C     Einzelne Querschnitte des Schussquerschnitts
+'C     Teilquerschnitt 1
+       A1GES = 0.125 * DE * DE * (2 * Pi - ALFK1 - ALFK11)
+'C     Teilquerschnitt 2
+       A2GES = 0.5 * Rkegel * Rkegel * (ALFK1 - ALFG1 + ALFK11 - ALFG11)
+'C     Teilquerschnitt 3
+       A3 = ((DE / 2 - Rkegel) * Sin(ALFK1) + 0.5 * Rkegel * Sin(ALFG1)) * HHILF
+       A33 = ((DE / 2 - Rkegel) * Sin(ALFK11) + Rkegel) * HHILF
+       If (Hg < 0 And HK < 0) Then A33 = ((DE / 2 - Rkegel) * Sin(ALFK11) + 0.5 * Rkegel * Sin(ALFG11)) * HHILF
+       A3GES = A3 + A33
+'C     Teilquerschnitt 4
+       A4 = 0.5 * ((DE / 2 - Rkegel) * Sin(ALFK1)) * (H - HHILF)
+       A44 = 0.5 * ((DE / 2 - Rkegel) * Sin(ALFK11)) * (H - HHILF)
+       If (Hg > B And HK > 0 And HK < B) Then A44 = DE / 2 * (H - HHILF)
+       If (Hg > 0 And Hg < B And HK > 0 And HK < B) Then A44 = DE / 2 * (H - HHILF)
+       A4GES = A4 + A44
+
+'C     Gesamter Schussquerschnitt AS mm2  an der Stelle x
+       Get_Alin_rund = A1GES + A2GES + A3GES + A4GES + AR
+       
+       End If
+
+'C     Programmierer: GW                          Stand:     30.Juli 2011
+'C     ******************************************************************
+'      SUBROUTINE VV4ASX (B,B1,H1,R1,XG,XK,X,DEG,DEK,HG,HK,AS)
+'C     ******************************************************************
+'C     Rucksackquerschnitt mit Rechteck:
+'C     Querschnittsflaeche AS eines Schusses zwischen grossem und kleinem
+'C     Querschnitt des Schusses
+'C     (Herleitung der Formeln in der Mathcad-Datei  Verteil_VV4ASX1.mcd)
+'C     ------------------------------------------------------------------
+'C     Zugehoerige externe Unterprogramme  keine
+'C     Externes Unterprogramm zu           VV4ADI.FOR
+'C     ------------------------------------------------------------------
+'C     E** B    mm    Breite der Abstroemplatte
+'C     E** B1   mm    Breite des Rechtecks
+'C     E** H1   mm    Hoehe des Rechtecks
+'C     E/A R1   mm    Ausrundungsradius des Rechteckuebergangs
+'C     E** XG   mm    x-Koordinate des grossen Schussquerschnitts
+'C     E** XK   mm    x-Koordinate des kleinen Schussquerschnitts
+'C     E** X    mm    x-Koordinate des Schussquerschnitts dazwischen
+'C     E** DEG  mm    Durchmesser des grossen Schussquerschnitts
+'C     E** DEK  mm    Durchmesser des kleinen Schussquerschnitts
+'C     E** HG   mm    Abstand (Kreismittelpunkt/Platte) grosser Querschni
+'C     E** HK   mm    Abstand (Kreismittelpunkt/Platte) kleiner Querschni
+'C     A** AS   mm2   Querschnittsflaeche des Schusses an der Stelle x
+'C     ******************************************************************
+'      IMPLICIT REAL*8 (A-H,O-Z)
+'      Pi = 3.14159265359
+'c
+'C     Wenn kein Rechteck vorhanden ist, dann muss auch R1=0 sein!
+'      IF(DABS(B1).LT.1.D-12.OR.DABS(H1).LT.1.D-12) R1=0.D0
+'C     Querschnittsflaeche eines evtl. angeschlossenen Rechtecks AR mm2:
+'      AR = B1 * H1 + 2# * R1 * R1 * (1# - 0.25 * Pi)
+'c
+'C     Abmessungen des Schusses zwischen grossem und kleinem Querschnitt:
+'      DE = DEG - (DEG - DEK) * (x - XG) / (xk - XG)
+'      H = Hg - (Hg - Hk) * (x - XG) / (xk - XG)
+'      Rkegel = 0.5 * DEG * (xk - x) / (xk - XG)
+'c
+'C     *** Sonderfall B=0:
+'      IF(DABS(B).LT.1.D-6) THEN
+'      AS=PI*H*H
+'      GoTo 999
+'      End If
+'c
+'C     *** Fall 1a ***
+'      If (Hg.GE.B.And.Hk.GE.B) Then
+'      AS=H*H*(1.D0+0.75D0*PI)+AR
+'      GoTo 999
+'      End If
+'c
+'C     *** Uebrige Faelle ***
+'C     Winkel des grossen Querschnitts am Umfangs-Beginn ALFG1 rad:
+'      IF(HG.GE.B) ALFG1=0.D0
+'      IF(HG.GE.0.D0.AND.HG.LT.B) ALFG1=DACOS(2.D0*HG*B/(HG*HG+B*B))
+'      IF(HG.LT.0.D0) ALFG1=DACOS(2.D0*HG/DSQRT(B*B+4.D0*HG*HG))
+'c
+'C     Winkel des kleinen Querschnitts am Umfangs-Beginn ALFK1 rad:
+'      IF(HK.GE.B) ALFK1=0.D0
+'      IF(HK.GE.0.D0.AND.HK.LT.B) ALFK1=DACOS(2.D0*HK*B/(HK*HK+B*B))
+'      IF(HK.LT.0.D0) ALFK1=DACOS(2.D0*HK/DSQRT(B*B+4.D0*HK*HK))
+'c
+'C     Winkel des kleinen Querschnitts am Umfangs-Ende ALFK11 rad:
+'      IF(HK.GE.0.D0) ALFK11=PI/2.D0
+'      IF(HK.LT.0.D0) ALFK11=DACOS(2.D0*HK/DSQRT(B*B+4.D0*HK*HK))
+'c
+'C     Winkel des grossen Querschnitts am Umfangs-Ende ALFG11 rad:
+'      IF(HG.GE.0.D0) ALFG11=PI/2.D0
+'      IF(HG.LT.0.D0) ALFG11=DACOS(2.D0*HG/DSQRT(B*B+4.D0*HG*HG))
+'c
+'C     z-Koordinate des Mittelpunkts von RKEGEL = Abstand von der Platte,
+'C     kann negativ werden HHILF mm:
+'      HHILF = Rkegel * DCOS(ALFG1)
+'c
+'c
+'C     Einzelne Querschnitte des Schussquerschnitts
+'C     Teilquerschnitt 1
+'      A1GES = 0.125 * DE * DE * (2# * Pi - ALFK1 - ALFK11)
+'C     Teilquerschnitt 2
+'      A2GES = 0.5 * Rkegel * Rkegel * (ALFK1 - ALFG1 + ALFK11 - ALFG11)
+'C     Teilquerschnitt 3
+'      A3 = ((DE / 2# - Rkegel) * DSIN(ALFK1) + 0.5 * Rkegel * DSIN(ALFG1)) * HHILF
+'      A33 = ((DE / 2# - Rkegel) * DSIN(ALFK11) + Rkegel) * HHILF
+'      IF(HG.LT.0.D0.AND.HK.LT.0.D0)
+'     *A33=((DE/2.D0-RKEGEL)*DSIN(ALFK11)+0.5D0*RKEGEL*DSIN(ALFG11))
+'     **HHILF
+'      A3GES = A3 + A33
+'C     Teilquerschnitt 4
+'      A4 = 0.5 * ((DE / 2# - Rkegel) * DSIN(ALFK1)) * (H - HHILF)
+'      A44 = 0.5 * ((DE / 2# - Rkegel) * DSIN(ALFK11)) * (H - HHILF)
+'      IF(HG.GE.B.AND.HK.GE.0.D0.AND.HK.LT.B)
+'     *A44=DE/2.D0*(H-HHILF)
+'      IF(HG.GE.0.D0.AND.HG.LT.B.AND.HK.GE.0.D0.AND.HK.LT.B)
+'     *A44=DE/2.D0*(H-HHILF)
+'      A4GES = A4 + A44
+'c
+'C     Gesamter Schussquerschnitt AS mm2  an der Stelle x
+'      AS=A1GES+A2GES+A3GES+A4GES+AR
+
+   
+End Function
+
+Public Function Get_h(A, B)
+   ' Bestimmt die Höhe / den Abstand des Mittelpunktes des abgeplatteten Kreisquerschnittes
+   ' über der Lochplatte - für direkt angeflanschte Verteilrohre
+   ' A = Querschnittsfläche ohne Rechteckkanahl
+   ' B = Lochplattenbreite
+   Pi = 3.14159265359
+
+   Dim D  As Double ' Durchmesser als Hilfvariabel
+    
+   'Startwert ermitteln
+   H = 0
+   
+   If A >= (3 / 4 * (2 * B) ^ 2 * Pi / 4 + B ^ 2) Then
+    H = (2 * A ^ 0.5) / (4 + 3 * Pi) ^ 0.5
+   ElseIf A >= B ^ 2 * Pi / 4 / 2 Then
+    'X~~0.000185598 (3.87298 sqrt(718400. A-322673.)-141.)
+    If 718400 * A / B ^ 2 - 322673 > 0 Then
+     H = 0.000185598 * (3.87298 * (718400 * A / B ^ 2 - 322673) ^ 0.5 - 141)
+     H = H * B
+    End If
+   Else
+    H = 0
+   End If
+   
+   
+   d_H = 10 'Schrittweite
+   d_R = 1 'Laufrichtung
+   H = H - d_H ' Höhe des Mittelpunkts über der Lochplatte (Startwert)
+    
+   For i = 1 To 100
+    
+    H = H + d_H * d_R ' Höhe vergrößern/verkleilnern
+    
+    'A_i= Get_Alin_rund(Hg, Hk, Ls - xp, Ls, B, B1, h_ueb, r_ueb)
+    A_ = Get_Alin_rund(H, H, 0, 1, B, 0, 0, 0) ' Fläche
+   
+    If i = 1 And A_ > A Then d_R = -1 ' Laufrichtung festlegen
+    
+    If Abs((A_ - A) / A) < 0.000001 Or d_H <= 0.01 Then ' Abbruchbedingung
+        Get_h = H
+        i = 1000 ' Abbruchbedingung
+        If Abs((A_ - A) / A) > 0.01 Then MsgBox ("Fehler #2 in Get_h")
+        
+    ElseIf A_ * d_R >= A * d_R Then
+        H = H - d_H * d_R ' Durchmesser einen Schritt zurücksetzen
+        d_H = d_H / 10    ' Schritte verfeinern
+    End If
+   
+    If i = 100 Then
+     H = 0
+     MsgBox ("Fehler in Get_h")
+     End
+     'Fehlermeldung
+    End If
+   
+   Next i
+
+      
+End Function
+
+Public Function Get_D_hb(H, B)
+   ' Bestimmt die Durchmesser des abgeplatteten Kreisquerschnittes durch die Höhenangabe und Lochplattenbreite
+   ' H = Höhe des Kreismittelpunktes
+   Pi = 3.14159265359
+   If H >= B Then
+    Get_D_hb = 2 * H
+   ElseIf H >= 0 Then
+    Get_D_hb = 2 * (B ^ 2 + H ^ 2) / (2 * B)
+   Else ' H<0
+    Get_D_hb = 2 * (H ^ 2 + (B / 2) ^ 2) ^ 0.5
+   End If
+   
+End Function
+
+
+Public Function Get_HerstL_rund(Dk)
+   ' Bestimmt die herstellbare Schusslänge für runde Verteilrohre in Abhängigkeit
+   ' vom kleinen Schussdurchmesser Dk
+   Dim x1, y1, x2, y2, m, x, y, c As Double
+   
+   ' Bis Dk=1000mm steigt die herstellbare Schusslänge kontinuierlich an
+   ' Die Kurve wird durch vorgegebene Punkte definiert
+   ' Der Kurvenverlauf zwischen den Punkten ist linear!
+   If Dk >= 0 And Dk <= 1000 Then
+      If Dk >= 0 And Dk <= 118 Then
+         x1 = 0
+         y1 = 0
+         x2 = 118
+         y2 = 84
+      ElseIf Dk > 118 And Dk <= 150 Then
+         x1 = 118
+         y1 = 84
+         x2 = 150
+         y2 = 129
+      ElseIf Dk > 150 And Dk <= 250 Then
+         x1 = 150
+         y1 = 129
+         x2 = 250
+         y2 = 250
+      ElseIf Dk > 250 And Dk <= 400 Then
+         x1 = 250
+         y1 = 250
+         x2 = 400
+         y2 = 440
+      ElseIf Dk > 400 And Dk <= 1000 Then
+         x1 = 400
+         y1 = 440
+         x2 = 1000
+         y2 = 1100
+      End If
+      m = (y2 - y1) / (x2 - x1)
+      c = y2 - m * x2
+      x = Dk
+      y = m * x + c
+      Get_HerstL_rund = y
+   ' Für Dk>1000mm ist die herstellbare Schusslänge 1100mm
+   ElseIf Dk > 1000 Then
+         Get_HerstL_rund = 1100
+   End If
+End Function
+
+Public Function Get_L_Zugabe(Schuesse)
+   ' Bestimmt die Längenzugabe zur Schrumpfkorrektur beim Schweißen
+   ' erforderlich für die Blechabwicklung!
+   If Schuesse > 20 Then
+      Get_L_Zugabe = 0.1
+   Else
+      Get_L_Zugabe = 0.2
+   End If
+End Function
+
+Public Function Get_S_Zugabe(Schuesse, x, ZWKB, Dv, H)
+   ' Bestimmt die Schrägenzugabe zur Korrektur der aufgespannten Lochplatte
+   ' erforderlich für die Blechabwicklung!
+   Dim h_licht, k, zugabe, zugabe_real As Double
+   Dim x1, x2, y1, y2 As Double
+   
+   ' Bestimmung der lichten Höhe h_licht
+   If (Dv / 2 + H) <= 500 Then
+      h_licht = Dv / 2 + H
+   Else
+      h_licht = 500
+   End If
+   
+   ' Verkleinerungsfaktor k
+   If Schuesse > 16 Then
+      k = 16 / Schuesse
+   Else
+      k = 1
+   End If
+   
+   ' Vorgabe des Polygonzugs
+   If (x / ZWKB) <= 0.1 Then
+      x1 = 0
+      y1 = 3.5
+      x2 = 0.1
+      y2 = 3.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.1 And (x / ZWKB) <= 0.2 Then
+      x1 = 0.1
+      y1 = 3.5
+      x2 = 0.2
+      y2 = 2.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.2 And (x / ZWKB) <= 0.3 Then
+      x1 = 0.2
+      y1 = 2.5
+      x2 = 0.3
+      y2 = 2
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.3 And (x / ZWKB) <= 0.4 Then
+      x1 = 0.3
+      y1 = 2
+      x2 = 0.4
+      y2 = 3.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.4 And (x / ZWKB) <= 0.5 Then
+      x1 = 0.4
+      y1 = 3.5
+      x2 = 0.5
+      y2 = 4
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.5 And (x / ZWKB) <= 0.6 Then
+      x1 = 0.5
+      y1 = 4
+      x2 = 0.6
+      y2 = 3
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.6 And (x / ZWKB) <= 0.7 Then
+      x1 = 0.6
+      y1 = 3
+      x2 = 0.7
+      y2 = 1.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.7 And (x / ZWKB) <= 0.8 Then
+      x1 = 0.7
+      y1 = 1.5
+      x2 = 0.8
+      y2 = 2
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.8 And (x / ZWKB) <= 0.9 Then
+      x1 = 0.8
+      y1 = 2
+      x2 = 0.9
+      y2 = 2.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   ElseIf (x / ZWKB) > 0.9 And (x / ZWKB) <= 1 Then
+      x1 = 0.9
+      y1 = 2.5
+      x2 = 1
+      y2 = 2.5
+      zugabe = Get_interpol_y(x1, y1, x2, y2, x / ZWKB)
+   End If
+   
+   ' Wenn es ein Rucksackverteilrohr ist dann immer 1.2
+   zugabe = 1.2
+   
+   zugabe_real = zugabe * (h_licht / 1000)
+   
+   Get_S_Zugabe = zugabe_real * k
+   
+End Function
+
+Public Function Get_interpol_y(x1, y1, x2, y2, x)
+   ' Interpolation eines Wertes y an der Stelle x
+   ' zwischen den Punkten (x1|y1) und (x2|y2)
+   Get_interpol_y = y1 + (y2 - y1) * (x - x1) / (x2 - x1)
+End Function
